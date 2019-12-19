@@ -1,0 +1,349 @@
+diff -Naur orig/xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/include/synaptics-properties.h xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/include/synaptics-properties.h
+--- orig/xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/include/synaptics-properties.h	2018-05-29 06:17:59.000000000 +0300
++++ xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/include/synaptics-properties.h	2019-11-29 00:13:36.467111583 +0300
+@@ -75,6 +75,15 @@
+ /* FLOAT, 4 values, min, max, accel, <deprecated> */
+ #define SYNAPTICS_PROP_SPEED "Synaptics Move Speed"
+ 
++/* 32 bit, 2 values, min, max */
++#define SYNAPTICS_PROP_EDGEMOTION_PRESSURE "Synaptics Edge Motion Pressure"
++
++/* 32 bit, 2 values, min, max */
++#define SYNAPTICS_PROP_EDGEMOTION_SPEED "Synaptics Edge Motion Speed"
++
++/* 8 bit (BOOL) */
++#define SYNAPTICS_PROP_EDGEMOTION "Synaptics Edge Motion Always"
++
+ /* 8 bit (BOOL), 2 values, updown, leftright */
+ #define SYNAPTICS_PROP_BUTTONSCROLLING "Synaptics Button Scrolling"
+ 
+diff -Naur orig/xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/man/synaptics.man xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/man/synaptics.man
+--- orig/xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/man/synaptics.man	2018-05-29 06:17:59.000000000 +0300
++++ xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/man/synaptics.man	2019-11-29 00:20:53.434618157 +0300
+@@ -160,6 +160,26 @@
+ .BI "Option \*qHorizScrollDelta\*q \*q" integer \*q
+ Move distance of the finger for a scroll event. Property: "Synaptics Scrolling
+ Distance"
++.TP 7
++.BI "Option \*qEdgeMotionMinZ\*q \*q" integer \*q
++Finger pressure at which minimum edge motion speed is set. Property:
++"Synaptics Edge Motion Pressure"
++.TP
++.BI "Option \*qEdgeMotionMaxZ\*q \*q" integer \*q
++Finger pressure at which maximum edge motion speed is set. Property:
++"Synaptics Edge Motion Pressure"
++.TP
++.BI "Option \*qEdgeMotionMinSpeed\*q \*q" integer \*q
++Slowest setting for edge motion speed. Property: "Synaptics Edge Motion Speed"
++.TP
++.BI "Option \*qEdgeMotionMaxSpeed\*q \*q" integer \*q
++Fastest setting for edge motion speed. Property: "Synaptics Edge Motion Speed"
++.TP
++.BI "Option \*qEdgeMotionUseAlways\*q \*q" boolean \*q
++If on, edge motion is also used for normal movements.
++.
++If off, edge motion is used only when dragging. Property: "Synaptics Edge
++Motion Always"
+ .TP
+ .BI "Option \*qMinSpeed\*q \*q" float \*q
+ Minimum speed factor. Property: "Synaptics Move Speed"
+@@ -641,9 +661,34 @@
+ is used, and if the pressure is greater than PressureMotionMaxZ,
+ PressureMotionMaxFactor is used.
+ .
++By default, PressureMotionMinZ and PressureMotionMaxZ are equal to
++EdgeMotionMinZ and EdgeMotionMaxZ.
++.
+ For a pressure value between PressureMotionMinZ and
+ PressureMotionMaxZ, the factor is increased linearly.
+ .
++.SS Edge motion
++When hitting an edge, movement can be automatically continued.
++.
++If EdgeMotionUseAlways is false, edge motion is only used when
++dragging.
++.
++With EdgeMotionUseAlways set to true, it is also used for normal
++cursor movements.
++.
++.LP
++Edge motion speed is calculated by taking into account the amount of
++pressure applied to the touchpad.
++.
++The sensitivity can be adjusted using the EdgeMotion parameters.
++.
++If the pressure is below EdgeMotionMinZ, EdgeMotionMinSpeed is used,
++and if the pressure is greater than EdgeMotionMaxZ, EdgeMotionMaxSpeed
++is used.
++.
++For a pressure value between EdgeMotionMinZ and EdgeMotionMaxZ, the
++speed is increased linearly.
++.
+ .SS Middle button emulation
+ Since most synaptics touchpad models don't have a button that
+ corresponds to the middle button on a mouse, the driver can emulate
+@@ -809,6 +854,18 @@
+ FLOAT, 4 values, min, max, accel, <deprecated>
+ 
+ .TP 7
++.BI "Synaptics Edge Motion Pressure"
++32 bit, 2 values, min, max.
++
++.TP 7
++.BI "Synaptics Edge Motion Speed"
++32 bit, 2 values, min, max.
++
++.TP 7
++.BI "Synaptics Edge Motion Always"
++8 bit (BOOL).
++
++.TP 7
+ .BI "Synaptics Button Scrolling"
+ 8 bit (BOOL), 2 values, updown, leftright.
+ 
+@@ -966,16 +1023,6 @@
+ .TP
+ .BI "Option \*qTrackstickSpeed\*q \*q" float \*q
+ .TP
+-.BI "Option \*qEdgeMotionMinZ\*q \*q" integer \*q
+-.TP
+-.BI "Option \*qEdgeMotionMaxZ\*q \*q" integer \*q
+-.TP
+-.BI "Option \*qEdgeMotionMinSpeed\*q \*q" integer \*q
+-.TP
+-.BI "Option \*qEdgeMotionMaxSpeed\*q \*q" integer \*q
+-.TP
+-.BI "Option \*qEdgeMotionUseAlways\*q \*q" boolean \*q
+-.TP
+ 
+ .SH "AUTHORS"
+ .LP
+diff -Naur orig/xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/src/properties.c xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/src/properties.c
+--- orig/xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/src/properties.c	2018-05-29 06:17:59.000000000 +0300
++++ xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/src/properties.c	2019-11-29 00:13:36.473111507 +0300
+@@ -285,6 +285,19 @@
+                      &para->scroll_button_repeat);
+     }
+ 
++    values[0] = para->edge_motion_min_z;
++    values[1] = para->edge_motion_max_z;
++    prop_edgemotion_pressure =
++        InitAtom(pInfo->dev, SYNAPTICS_PROP_EDGEMOTION_PRESSURE, 32, 2, values);
++
++    values[0] = para->edge_motion_min_speed;
++    values[1] = para->edge_motion_max_speed;
++    prop_edgemotion_speed =
++        InitAtom(pInfo->dev, SYNAPTICS_PROP_EDGEMOTION_SPEED, 32, 2, values);
++    prop_edgemotion_always =
++        InitAtom(pInfo->dev, SYNAPTICS_PROP_EDGEMOTION, 8, 1,
++                 &para->edge_motion_use_always);
++
+     prop_off =
+         InitAtom(pInfo->dev, SYNAPTICS_PROP_OFF, 8, 1, &para->touchpad_off);
+     prop_lockdrags =
+@@ -596,6 +609,40 @@
+         para->scroll_button_repeat = *(INT32 *) prop->data;
+ 
+     }
++    else if (property == prop_edgemotion_pressure) {
++        CARD32 *pressure;
++
++        if (prop->size != 2 || prop->format != 32 || prop->type != XA_INTEGER)
++            return BadMatch;
++
++        pressure = (CARD32 *) prop->data;
++        if (pressure[0] > pressure[1])
++            return BadValue;
++
++        para->edge_motion_min_z = pressure[0];
++        para->edge_motion_max_z = pressure[1];
++
++    }
++    else if (property == prop_edgemotion_speed) {
++        CARD32 *speed;
++
++        if (prop->size != 2 || prop->format != 32 || prop->type != XA_INTEGER)
++            return BadMatch;
++
++        speed = (CARD32 *) prop->data;
++        if (speed[0] > speed[1])
++            return BadValue;
++
++        para->edge_motion_min_speed = speed[0];
++        para->edge_motion_max_speed = speed[1];
++
++    }
++    else if (property == prop_edgemotion_always) {
++        if (prop->size != 1 || prop->format != 8 || prop->type != XA_INTEGER)
++            return BadMatch;
++
++        para->edge_motion_use_always = *(BOOL *) prop->data;
++    }
+     else if (property == prop_off) {
+         CARD8 off;
+ 
+diff -Naur orig/xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/src/synaptics.c xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/src/synaptics.c
+--- orig/xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/src/synaptics.c	2018-05-29 06:17:59.000000000 +0300
++++ xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/src/synaptics.c	2019-11-29 00:36:32.221816004 +0300
+@@ -561,10 +561,12 @@
+     int horizScrollDelta, vertScrollDelta;      /* pixels */
+     int tapMove;                /* pixels */
+     int l, r, t, b;             /* left, right, top, bottom */
++    int edgeMotionMinSpeed, edgeMotionMaxSpeed; /* pixels/second */
+     double accelFactor;         /* 1/pixels */
+     int fingerLow, fingerHigh;  /* pressure */
+     int emulateTwoFingerMinZ;   /* pressure */
+     int emulateTwoFingerMinW;   /* width */
++    int edgeMotionMinZ, edgeMotionMaxZ; /* pressure */
+     int pressureMotionMinZ, pressureMotionMaxZ; /* pressure */
+     int palmMinWidth, palmMinZ; /* pressure */
+     int tapButton1, tapButton2, tapButton3;
+@@ -600,6 +602,8 @@
+     horizScrollDelta = diag * .020;
+     vertScrollDelta = diag * .020;
+     tapMove = diag * .044;
++    edgeMotionMinSpeed = 1;
++    edgeMotionMaxSpeed = diag * .080;
+     accelFactor = 200.0 / diag; /* trial-and-error */
+ 
+     /* hysteresis, assume >= 0 is a detected value (e.g. evdev fuzz) */
+@@ -612,6 +616,8 @@
+ 
+     /* scaling based on defaults and a pressure of 256 */
+     emulateTwoFingerMinZ = priv->minp + range * (282.0 / 256);
++    edgeMotionMinZ = priv->minp + range * (30.0 / 256);
++    edgeMotionMaxZ = priv->minp + range * (160.0 / 256);
+     pressureMotionMinZ = priv->minp + range * (30.0 / 256);
+     pressureMotionMaxZ = priv->minp + range * (160.0 / 256);
+     palmMinZ = priv->minp + range * (200.0 / 256);
+@@ -700,6 +706,16 @@
+         xf86SetBoolOption(opts, "VertTwoFingerScroll", vertTwoFingerScroll);
+     pars->scroll_twofinger_horiz =
+         xf86SetBoolOption(opts, "HorizTwoFingerScroll", horizTwoFingerScroll);
++    pars->edge_motion_min_z =
++        xf86SetIntOption(opts, "EdgeMotionMinZ", edgeMotionMinZ);
++    pars->edge_motion_max_z =
++        xf86SetIntOption(opts, "EdgeMotionMaxZ", edgeMotionMaxZ);
++    pars->edge_motion_min_speed =
++        xf86SetIntOption(opts, "EdgeMotionMinSpeed", edgeMotionMinSpeed);
++    pars->edge_motion_max_speed =
++        xf86SetIntOption(opts, "EdgeMotionMaxSpeed", edgeMotionMaxSpeed);
++    pars->edge_motion_use_always =
++        xf86SetBoolOption(opts, "EdgeMotionUseAlways", FALSE);
+     pars->touchpad_off = xf86SetIntOption(opts, "TouchpadOff", TOUCHPAD_ON);
+ 
+     if (priv->has_scrollbuttons) {
+@@ -2195,11 +2211,75 @@
+ }
+ 
+ static void
++get_edge_speed(SynapticsPrivate * priv, const struct SynapticsHwState *hw,
++               enum EdgeType edge, int *x_edge_speed, int *y_edge_speed)
++{
++    SynapticsParameters *para = &priv->synpara;
++
++    int minZ = para->edge_motion_min_z;
++    int maxZ = para->edge_motion_max_z;
++    int minSpd = para->edge_motion_min_speed;
++    int maxSpd = para->edge_motion_max_speed;
++    int edge_speed;
++
++    if (hw->z <= minZ) {
++        edge_speed = minSpd;
++    }
++    else if (hw->z >= maxZ) {
++        edge_speed = maxSpd;
++    }
++    else {
++        edge_speed =
++            minSpd + (hw->z - minZ) * (maxSpd - minSpd) / (maxZ - minZ);
++    }
++    /* on rectangular pad */
++    if (edge & RIGHT_EDGE) {
++        *x_edge_speed = edge_speed;
++    }
++    else if (edge & LEFT_EDGE) {
++        *x_edge_speed = -edge_speed;
++    }
++    if (edge & TOP_EDGE) {
++        *y_edge_speed = -edge_speed;
++    }
++    else if (edge & BOTTOM_EDGE) {
++        *y_edge_speed = edge_speed;
++    }
++}
++
++static void
+ get_delta(SynapticsPrivate *priv, const struct SynapticsHwState *hw,
+           enum EdgeType edge, double *dx, double *dy)
+ {
++    SynapticsParameters *para = &priv->synpara;
++    double dtime = (hw->millis - HIST(0).millis) / 1000.0;
++    double integral;
++    double tmpf;
++    int x_edge_speed = 0;
++    int y_edge_speed = 0;
++
+     *dx = hw->x - HIST(0).x;
+     *dy = hw->y - HIST(0).y;
++
++    if ((priv->tap_state == TS_DRAG) || para->edge_motion_use_always)
++        get_edge_speed(priv, hw, edge, &x_edge_speed, &y_edge_speed);
++
++    /* report edge speed as synthetic motion. Of course, it would be
++     * cooler to report floats than to buffer, but anyway. */
++
++    /* FIXME: When these values go NaN, bad things happen. Root cause is unknown
++     * thus far though. */
++    if (isnan(priv->frac_x))
++        priv->frac_x = 0;
++    if (isnan(priv->frac_y))
++        priv->frac_y = 0;
++
++    tmpf = *dx + x_edge_speed * dtime + priv->frac_x;
++    priv->frac_x = modf(tmpf, &integral);
++    *dx = integral;
++    tmpf = *dy + y_edge_speed * dtime + priv->frac_y;
++    priv->frac_y = modf(tmpf, &integral);
++    *dy = integral;
+ }
+ 
+ /* Vector length, but not sqrt'ed, we only need it for comparison */
+diff -Naur orig/xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/src/synapticsstr.h xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/src/synapticsstr.h
+--- orig/xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/src/synapticsstr.h	2018-05-29 06:17:59.000000000 +0300
++++ xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/src/synapticsstr.h	2019-11-29 00:40:41.517681930 +0300
+@@ -193,6 +193,11 @@
+     Bool scroll_twofinger_vert; /* Enable/disable vertical two-finger scrolling */
+     Bool scroll_twofinger_horiz;        /* Enable/disable horizontal two-finger scrolling */
+     double min_speed, max_speed, accl;  /* movement parameters */
++	int edge_motion_min_z;      /* finger pressure at which minimum edge motion speed is set */
++	int edge_motion_max_z;      /* finger pressure at which maximum edge motion speed is set */
++	int edge_motion_min_speed;  /* slowest setting for edge motion speed */
++	int edge_motion_max_speed;  /* fastest setting for edge motion speed */
++	Bool edge_motion_use_always;        /* If false, edge motion is used only when dragging */
+ 
+     Bool updown_button_scrolling;       /* Up/Down-Button scrolling or middle/double-click */
+     Bool leftright_button_scrolling;    /* Left/right-button scrolling, or two lots of middle button */
+@@ -288,6 +293,7 @@
+     Bool circ_scroll_on;        /* Keeps track of currently active scroll modes */
+     Bool circ_scroll_vert;      /* True: Generate vertical scroll events
+                                    False: Generate horizontal events */
++    double frac_x, frac_y;      /* absolute -> relative fraction */
+     enum MidButtonEmulation mid_emu_state;      /* emulated 3rd button */
+     int repeatButtons;          /* buttons for repeat */
+     int nextRepeat;             /* Time when to trigger next auto repeat event */
+diff -Naur orig/xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/tools/synclient.c xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/tools/synclient.c
+--- orig/xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/tools/synclient.c	2018-05-29 06:17:59.000000000 +0300
++++ xorg-xf86-input-synaptics-xf86-input-synaptics-1.9.1/tools/synclient.c	2019-11-29 00:13:36.484111369 +0300
+@@ -96,6 +96,11 @@
+     {"CornerCoasting",        PT_BOOL,   0, 1,     SYNAPTICS_PROP_SCROLL_EDGE,	8,	2},
+     {"VertTwoFingerScroll",   PT_BOOL,   0, 1,     SYNAPTICS_PROP_SCROLL_TWOFINGER,	8,	0},
+     {"HorizTwoFingerScroll",  PT_BOOL,   0, 1,     SYNAPTICS_PROP_SCROLL_TWOFINGER,	8,	1},
++	{"EdgeMotionMinZ",        PT_INT,    1, 255,   SYNAPTICS_PROP_EDGEMOTION_PRESSURE,  32,    0},
++	{"EdgeMotionMaxZ",        PT_INT,    1, 255,   SYNAPTICS_PROP_EDGEMOTION_PRESSURE,  32,    1},
++	{"EdgeMotionMinSpeed",    PT_INT,    0, 1000,  SYNAPTICS_PROP_EDGEMOTION_SPEED,     32,    0},
++	{"EdgeMotionMaxSpeed",    PT_INT,    0, 1000,  SYNAPTICS_PROP_EDGEMOTION_SPEED,     32,    1},
++	{"EdgeMotionUseAlways",   PT_BOOL,   0, 1,     SYNAPTICS_PROP_EDGEMOTION,   8,     0},
+     {"MinSpeed",              PT_DOUBLE, 0, 255.0,   SYNAPTICS_PROP_SPEED,	0, /*float */	0},
+     {"MaxSpeed",              PT_DOUBLE, 0, 255.0,   SYNAPTICS_PROP_SPEED,	0, /*float */	1},
+     {"AccelFactor",           PT_DOUBLE, 0, 1.0,   SYNAPTICS_PROP_SPEED,	0, /*float */	2},
